@@ -1,0 +1,12 @@
+# File Processing Framework - Dependencies
+
+# Core dependencies
+pyyaml>=6.0          # YAML configuration support
+lxml>=4.9.0          # XML parsing
+xmltodict>=0.13.0    # XML to dict conversion
+python-dateutil>=2.8.2  # Date parsing
+chardet>=5.0.0       # Encoding detection
+
+# Python 3.11+ has tomllib built-in
+# For older Python versions, uncomment:
+# tomli>=2.0.0       # TOML support for Python < 3.11

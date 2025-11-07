@@ -1,0 +1,456 @@
+"""
+GUI interface for the file processing framework.
+
+Simple Tkinter-based GUI for file selection and processing.
+Task-first approach: User selects task, then provides files.
+"""
+
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, scrolledtext
+from pathlib import Path
+import threading
+from typing import List
+from ..core.runner import TaskRunner
+from ..core.exceptions import FrameworkException
+from ..core.task_registry import TaskRegistry
+from ..config.config_loader import ConfigLoader
+
+
+class MainWindow:
+    """
+    Main GUI window for the file processing framework.
+
+    Task-first approach:
+    1. Select task
+    2. Load config (optional, shows task requirements)
+    3. Select input files
+    4. Choose output directory
+    5. Run
+    """
+
+    def __init__(self, root):
+        """
+        Initialize the main window.
+
+        Args:
+            root: Tk root window
+        """
+        self.root = root
+        self.root.title("File Processing Framework")
+        self.root.geometry("750x950")
+        self.root.resizable(True, True)
+
+        # Variables
+        self.input_files = []
+        self.config_file = None
+        self.parameter_file = None
+        self.output_dir = None
+        self.current_config = None
+
+        # Initialize task registry (auto-discovers tasks)
+        self.registry = TaskRegistry()
+        self.tasks = self.registry.get_all_tasks()
+        self.task_configs = {}
+
+        # Build task name to config path mapping
+        for task_name, config_path in self.registry.get_all_configs().items():
+            self.task_configs[task_name] = str(config_path)
+
+        self.config_loader = ConfigLoader()
+
+        # Create UI
+        self._create_ui()
+
+        # Center window
+        self._center_window()
+
+    def _create_ui(self):
+        """Create the user interface."""
+        # Main container with padding
+        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+
+        # Configure grid weights
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+        main_frame.columnconfigure(1, weight=1)
+
+        row = 0
+
+        # Title
+        title_label = ttk.Label(
+            main_frame,
+            text="File Processing Framework",
+            font=('Arial', 16, 'bold')
+        )
+        title_label.grid(row=row, column=0, columnspan=3, pady=(0, 15))
+        row += 1
+
+        # === STEP 1: SELECT TASK ===
+        step1_label = ttk.Label(main_frame, text="STEP 1: SELECT TASK", font=('Arial', 10, 'bold'))
+        step1_label.grid(row=row, column=0, columnspan=3, sticky=tk.W, pady=(5, 5))
+        row += 1
+
+        ttk.Separator(main_frame, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        row += 1
+
+        # Task Selection
+        ttk.Label(main_frame, text="Task:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        self.task_var = tk.StringVar(value='DemoTask')
+        task_combo = ttk.Combobox(
+            main_frame,
+            textvariable=self.task_var,
+            values=list(self.tasks.keys()),
+            state='readonly',
+            width=47
+        )
+        task_combo.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=5)
+        task_combo.bind('<<ComboboxSelected>>', self._on_task_selected)
+        row += 1
+
+        # Task Info Display
+        self.task_info_text = tk.Text(main_frame, height=3, width=50, wrap=tk.WORD, font=('Arial', 9))
+        self.task_info_text.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5, padx=5)
+        self.task_info_text.config(state='disabled')
+        row += 1
+
+        # === STEP 2: CONFIGURATION ===
+        step2_label = ttk.Label(main_frame, text="STEP 2: CONFIGURATION", font=('Arial', 10, 'bold'))
+        step2_label.grid(row=row, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
+        row += 1
+
+        ttk.Separator(main_frame, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        row += 1
+
+        # Config File
+        ttk.Label(main_frame, text="Config File:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        self.config_entry = ttk.Entry(main_frame, width=50, state='readonly')
+        self.config_entry.grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=5)
+        row += 1
+
+        ttk.Label(main_frame, text="(auto-linked to task)", font=('Arial', 8, 'italic')).grid(
+            row=row, column=1, sticky=tk.W, padx=5
+        )
+        row += 1
+
+        # === STEP 3: INPUT FILES ===
+        step3_label = ttk.Label(main_frame, text="STEP 3: INPUT FILES", font=('Arial', 10, 'bold'))
+        step3_label.grid(row=row, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
+        row += 1
+
+        ttk.Separator(main_frame, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        row += 1
+
+        # Input Files
+        ttk.Label(main_frame, text="Input File(s):").grid(row=row, column=0, sticky=tk.W, pady=5)
+        self.input_entry = ttk.Entry(main_frame, width=50)
+        self.input_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=5)
+        ttk.Button(main_frame, text="Browse", command=self._browse_input).grid(row=row, column=2, pady=5)
+        row += 1
+
+        ttk.Label(main_frame, text="(select one or multiple files)", font=('Arial', 8, 'italic')).grid(
+            row=row, column=1, sticky=tk.W, padx=5
+        )
+        row += 1
+
+        # Parameter File
+        ttk.Label(main_frame, text="Parameter File:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        self.parameter_entry = ttk.Entry(main_frame, width=50)
+        self.parameter_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=5)
+        ttk.Button(main_frame, text="Browse", command=self._browse_parameter).grid(row=row, column=2, pady=5)
+        row += 1
+
+        ttk.Label(main_frame, text="(optional - single parameter file for task)", font=('Arial', 8, 'italic')).grid(
+            row=row, column=1, sticky=tk.W, padx=5
+        )
+        row += 1
+
+        # === STEP 4: OUTPUT ===
+        step4_label = ttk.Label(main_frame, text="STEP 4: OUTPUT", font=('Arial', 10, 'bold'))
+        step4_label.grid(row=row, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
+        row += 1
+
+        ttk.Separator(main_frame, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        row += 1
+
+        # Output Directory
+        ttk.Label(main_frame, text="Output Dir:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        self.output_entry = ttk.Entry(main_frame, width=50)
+        self.output_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=5)
+        ttk.Button(main_frame, text="Browse", command=self._browse_output).grid(row=row, column=2, pady=5)
+        row += 1
+
+        ttk.Label(main_frame, text="(output format from config)", font=('Arial', 8, 'italic')).grid(
+            row=row, column=1, sticky=tk.W, padx=5
+        )
+        row += 1
+
+        # Run Button
+        ttk.Separator(main_frame, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        row += 1
+
+        self.run_button = ttk.Button(
+            main_frame,
+            text="Run Task",
+            command=self._run_process,
+            style='Accent.TButton'
+        )
+        self.run_button.grid(row=row, column=0, columnspan=3, pady=10, sticky=(tk.W, tk.E))
+        row += 1
+
+        # Status
+        ttk.Label(main_frame, text="Status:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        self.status_var = tk.StringVar(value="Ready")
+        status_label = ttk.Label(main_frame, textvariable=self.status_var)
+        status_label.grid(row=row, column=1, sticky=tk.W, pady=5, padx=5)
+        row += 1
+
+        # Separator
+        ttk.Separator(main_frame, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        row += 1
+
+        # Log Output
+        ttk.Label(main_frame, text="Log Output:", font=('Arial', 10, 'bold')).grid(
+            row=row, column=0, sticky=tk.W, pady=(0, 5)
+        )
+        row += 1
+
+        # Scrolled text widget for log
+        self.log_text = scrolledtext.ScrolledText(
+            main_frame,
+            width=85,
+            height=25,
+            wrap=tk.WORD,
+            font=('Courier', 9)
+        )
+        self.log_text.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        main_frame.rowconfigure(row, weight=1)
+        row += 1
+
+        # Configure style for accent button
+        style = ttk.Style()
+        style.configure('Accent.TButton', font=('Arial', 11, 'bold'))
+
+        # Update task info and load config on startup
+        self._on_task_selected()
+
+    def _center_window(self):
+        """Center the window on screen."""
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f'{width}x{height}+{x}+{y}')
+
+    def _on_task_selected(self, event=None):
+        """Handle task selection change."""
+        # Auto-load config file for selected task
+        task_name = self.task_var.get()
+        if task_name in self.task_configs:
+            config_path = Path(self.task_configs[task_name])
+            if config_path.exists():
+                self.config_file = str(config_path)
+                self.config_entry.config(state='normal')
+                self.config_entry.delete(0, tk.END)
+                self.config_entry.insert(0, config_path.name)
+                self.config_entry.config(state='readonly')
+                self._log(f"Auto-loaded config for {task_name}: {config_path.name}")
+            else:
+                self._log(f"Warning: Config file not found: {config_path}")
+
+        self._update_task_info()
+
+    def _update_task_info(self):
+        """Update task information display."""
+        # Load config to get task info
+        if self.config_file:
+            try:
+                self.current_config = self.config_loader.load(self.config_file)
+            except:
+                self.current_config = self.config_loader.get_default_config()
+        else:
+            self.current_config = self.config_loader.get_default_config()
+
+        # Get task info from config
+        task_config = self.current_config.get('task', {})
+        description = task_config.get('description', 'No description available')
+        input_format = task_config.get('input', {}).get('format', 'unknown')
+        output_format = task_config.get('output', {}).get('format', 'unknown')
+
+        # Update info text
+        info_text = f"Description: {description}\n"
+        info_text += f"Input Format: {input_format.upper()}\n"
+        info_text += f"Output Format: {output_format.upper()}"
+
+        self.task_info_text.config(state='normal')
+        self.task_info_text.delete('1.0', tk.END)
+        self.task_info_text.insert('1.0', info_text)
+        self.task_info_text.config(state='disabled')
+
+    def _browse_input(self):
+        """Browse for input files."""
+        filetypes = [
+            ('All Supported', '*.csv *.json *.xml'),
+            ('CSV files', '*.csv'),
+            ('JSON files', '*.json'),
+            ('XML files', '*.xml'),
+            ('All files', '*.*')
+        ]
+
+        filenames = filedialog.askopenfilenames(
+            title="Select Input File(s)",
+            filetypes=filetypes
+        )
+
+        if filenames:
+            self.input_files = list(filenames)
+            display_text = ', '.join([Path(f).name for f in filenames])
+            if len(display_text) > 60:
+                display_text = f"{len(filenames)} files selected"
+            self.input_entry.delete(0, tk.END)
+            self.input_entry.insert(0, display_text)
+            self._log(f"Selected {len(filenames)} input file(s)")
+
+    def _browse_parameter(self):
+        """Browse for parameter file."""
+        filetypes = [
+            ('All Supported', '*.csv *.json *.xml *.txt *.yaml *.yml'),
+            ('CSV files', '*.csv'),
+            ('JSON files', '*.json'),
+            ('XML files', '*.xml'),
+            ('Text files', '*.txt'),
+            ('YAML files', '*.yaml *.yml'),
+            ('All files', '*.*')
+        ]
+
+        filename = filedialog.askopenfilename(
+            title="Select Parameter File",
+            filetypes=filetypes
+        )
+
+        if filename:
+            self.parameter_file = filename
+            self.parameter_entry.delete(0, tk.END)
+            self.parameter_entry.insert(0, Path(filename).name)
+            self._log(f"Selected parameter file: {Path(filename).name}")
+
+    def _browse_output(self):
+        """Browse for output directory."""
+        directory = filedialog.askdirectory(
+            title="Select Output Directory"
+        )
+
+        if directory:
+            self.output_dir = directory
+            self.output_entry.delete(0, tk.END)
+            self.output_entry.insert(0, directory)
+            self._log(f"Output directory: {directory}")
+
+    def _run_process(self):
+        """Run the processing workflow."""
+        # Validate inputs
+        if not self.input_files:
+            messagebox.showerror("Error", "Please select at least one input file")
+            return
+
+        if not self.output_dir:
+            messagebox.showerror("Error", "Please select an output directory")
+            return
+
+        # Disable run button
+        self.run_button.config(state='disabled')
+        self.status_var.set("Processing...")
+        self._log("\n" + "="*75)
+        self._log("Starting processing...")
+        self._log("="*75)
+
+        # Run in separate thread to avoid freezing GUI
+        thread = threading.Thread(target=self._process_files, daemon=True)
+        thread.start()
+
+    def _process_files(self):
+        """Process files (runs in separate thread)."""
+        try:
+            # Get task instance
+            task_name = self.task_var.get()
+            task_class = self.tasks[task_name]
+            task = task_class()
+
+            # Create runner
+            runner = TaskRunner()
+
+            # Log parameters
+            self._log(f"Task: {task_name}")
+            self._log(f"Input files: {len(self.input_files)}")
+            for i, f in enumerate(self.input_files, 1):
+                self._log(f"  {i}. {Path(f).name}")
+            if self.config_file:
+                self._log(f"Config: {Path(self.config_file).name}")
+            else:
+                self._log("Config: Using defaults")
+            if self.parameter_file:
+                self._log(f"Parameter file: {Path(self.parameter_file).name}")
+            self._log(f"Output directory: {self.output_dir}")
+            self._log("")
+
+            # Run processing
+            output_files = runner.run(
+                input_files=self.input_files,
+                task=task,
+                output_dir=self.output_dir,
+                config_file=self.config_file if self.config_file else None,
+                cli_overrides=None
+            )
+
+            # Success
+            self._log("")
+            self._log("="*75)
+            self._log(f"✅ Success! Generated {len(output_files)} file(s):")
+            for i, output_file in enumerate(output_files, 1):
+                self._log(f"  {i}. {Path(output_file).name}")
+            self._log("="*75)
+
+            self.root.after(0, lambda: self.status_var.set("Completed successfully"))
+            self.root.after(0, lambda: messagebox.showinfo(
+                "Success",
+                f"Processing completed!\n\nGenerated {len(output_files)} file(s) in:\n{self.output_dir}"
+            ))
+
+        except FrameworkException as e:
+            self._log(f"\n❌ Error: {e}")
+            self.root.after(0, lambda: self.status_var.set("Error"))
+            self.root.after(0, lambda: messagebox.showerror("Error", str(e)))
+
+        except Exception as e:
+            self._log(f"\n❌ Unexpected error: {e}")
+            self.root.after(0, lambda: self.status_var.set("Error"))
+            self.root.after(0, lambda: messagebox.showerror("Unexpected Error", str(e)))
+
+        finally:
+            # Re-enable run button
+            self.root.after(0, lambda: self.run_button.config(state='normal'))
+
+    def _log(self, message: str):
+        """
+        Add message to log output.
+
+        Args:
+            message: Message to log
+        """
+        def append_text():
+            self.log_text.insert(tk.END, message + '\n')
+            self.log_text.see(tk.END)
+
+        self.root.after(0, append_text)
+
+
+def main():
+    """Main entry point for GUI."""
+    root = tk.Tk()
+    app = MainWindow(root)
+    root.mainloop()
+
+
+if __name__ == '__main__':
+    main()

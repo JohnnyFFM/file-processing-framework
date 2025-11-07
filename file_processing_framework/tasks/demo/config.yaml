@@ -1,0 +1,27 @@
+# Configuration for CSV files with headers
+# New structure: task-centric with input/output format defined
+
+task:
+  name: demo
+  description: "Simple demo task for CSV processing"
+
+  input:
+    format: csv
+    config:
+      has_header: true
+      separator: ","
+      decimal_separator: "."
+      thousands_separator: ","
+      encoding: utf-8
+      parse_values: true
+
+  parameters:
+    add_processed_flag: true
+    output_suffix: "processed"
+
+  output:
+    format: json
+    config:
+      indent: 2
+      sort_keys: false
+      encoding: utf-8

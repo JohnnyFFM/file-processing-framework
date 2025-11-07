@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.claude/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# Project specific
+output/
+test_output/
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
+# GSR-related files (project-specific, not for version control)
+file_processing_framework/tasks/first_gsr_injection/
+file_processing_framework/examples/sample_data/gsr_sample.csv
