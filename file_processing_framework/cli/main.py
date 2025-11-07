@@ -70,6 +70,12 @@ Examples:
         help='Configuration file (YAML, TOML, or JSON)'
     )
 
+    parser.add_argument(
+        '--parameter-file',
+        '-p',
+        help='Parameter file for task (CSV, JSON, etc.)'
+    )
+
     # CLI overrides for input formats
     parser.add_argument(
         '--separator',
@@ -122,13 +128,15 @@ def build_cli_overrides(args: argparse.Namespace) -> dict:
         args: Parsed command line arguments
 
     Returns:
-        dict: Configuration overrides (new structure: task.input.config)
+        dict: Configuration overrides (new structure: task.input.config and task.parameters)
     """
     overrides = {}
 
     # Input overrides (new structure: task.input.config)
     if any([args.separator, args.encoding, args.decimal, args.thousands, args.has_header is not None]):
-        overrides['task'] = {'input': {'config': {}}}
+        if 'task' not in overrides:
+            overrides['task'] = {}
+        overrides['task']['input'] = {'config': {}}
         input_config = overrides['task']['input']['config']
 
         if args.separator:
@@ -145,6 +153,14 @@ def build_cli_overrides(args: argparse.Namespace) -> dict:
 
         if args.has_header is not None:
             input_config['has_header'] = args.has_header
+
+    # Parameter file override (new structure: task.parameters)
+    if args.parameter_file:
+        if 'task' not in overrides:
+            overrides['task'] = {}
+        if 'parameters' not in overrides['task']:
+            overrides['task']['parameters'] = {}
+        overrides['task']['parameters']['parameter_file'] = args.parameter_file
 
     return overrides
 

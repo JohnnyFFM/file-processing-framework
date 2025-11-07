@@ -9,11 +9,41 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 from pathlib import Path
 import threading
+import logging
 from typing import List
 from ..core.runner import TaskRunner
 from ..core.exceptions import FrameworkException
 from ..core.task_registry import TaskRegistry
 from ..config.config_loader import ConfigLoader
+
+
+class GUILogHandler(logging.Handler):
+    """
+    Custom logging handler that writes log messages to GUI text widget.
+    """
+
+    def __init__(self, log_callback):
+        """
+        Initialize handler.
+
+        Args:
+            log_callback: Function to call with log messages
+        """
+        super().__init__()
+        self.log_callback = log_callback
+
+    def emit(self, record):
+        """
+        Emit a log record.
+
+        Args:
+            record: LogRecord to emit
+        """
+        try:
+            msg = self.format(record)
+            self.log_callback(msg)
+        except Exception:
+            self.handleError(record)
 
 
 class MainWindow:
@@ -57,6 +87,10 @@ class MainWindow:
             self.task_configs[task_name] = str(config_path)
 
         self.config_loader = ConfigLoader()
+
+        # Setup logging handler for capturing framework logs
+        self.log_handler = None
+        self._setup_logging_handler()
 
         # Create UI
         self._create_ui()
@@ -372,6 +406,9 @@ class MainWindow:
     def _process_files(self):
         """Process files (runs in separate thread)."""
         try:
+            # Attach logging handler to capture framework logs
+            self._attach_log_handler()
+
             # Get task instance
             task_name = self.task_var.get()
             task_class = self.tasks[task_name]
@@ -394,19 +431,30 @@ class MainWindow:
             self._log(f"Output directory: {self.output_dir}")
             self._log("")
 
+            # Build overrides for parameter file
+            cli_overrides = None
+            if self.parameter_file:
+                cli_overrides = {
+                    'task': {
+                        'parameters': {
+                            'parameter_file': self.parameter_file
+                        }
+                    }
+                }
+
             # Run processing
             output_files = runner.run(
                 input_files=self.input_files,
                 task=task,
                 output_dir=self.output_dir,
                 config_file=self.config_file if self.config_file else None,
-                cli_overrides=None
+                cli_overrides=cli_overrides
             )
 
             # Success
             self._log("")
             self._log("="*75)
-            self._log(f"✅ Success! Generated {len(output_files)} file(s):")
+            self._log(f"Success! Generated {len(output_files)} file(s):")
             for i, output_file in enumerate(output_files, 1):
                 self._log(f"  {i}. {Path(output_file).name}")
             self._log("="*75)
@@ -418,16 +466,19 @@ class MainWindow:
             ))
 
         except FrameworkException as e:
-            self._log(f"\n❌ Error: {e}")
+            self._log(f"\nERROR: {e}")
             self.root.after(0, lambda: self.status_var.set("Error"))
             self.root.after(0, lambda: messagebox.showerror("Error", str(e)))
 
         except Exception as e:
-            self._log(f"\n❌ Unexpected error: {e}")
+            self._log(f"\nUNEXPECTED ERROR: {e}")
             self.root.after(0, lambda: self.status_var.set("Error"))
             self.root.after(0, lambda: messagebox.showerror("Unexpected Error", str(e)))
 
         finally:
+            # Detach logging handler
+            self._detach_log_handler()
+
             # Re-enable run button
             self.root.after(0, lambda: self.run_button.config(state='normal'))
 
@@ -443,6 +494,30 @@ class MainWindow:
             self.log_text.see(tk.END)
 
         self.root.after(0, append_text)
+
+    def _setup_logging_handler(self):
+        """
+        Setup logging handler to capture framework logs in GUI.
+        """
+        # Create handler with callback to _log
+        self.log_handler = GUILogHandler(self._log)
+
+        # Format: simple message without timestamp (GUI shows execution time already)
+        formatter = logging.Formatter('%(levelname)s - %(name)s - %(message)s')
+        self.log_handler.setFormatter(formatter)
+        self.log_handler.setLevel(logging.INFO)
+
+    def _attach_log_handler(self):
+        """Attach the GUI log handler to root logger."""
+        if self.log_handler:
+            root_logger = logging.getLogger()
+            root_logger.addHandler(self.log_handler)
+
+    def _detach_log_handler(self):
+        """Detach the GUI log handler from root logger."""
+        if self.log_handler:
+            root_logger = logging.getLogger()
+            root_logger.removeHandler(self.log_handler)
 
 
 def main():

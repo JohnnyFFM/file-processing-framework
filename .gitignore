@@ -53,4 +53,5 @@ test_output/
 
 # GSR-related files (project-specific, not for version control)
 file_processing_framework/tasks/first_gsr_injection/
-file_processing_framework/examples/sample_data/gsr_sample.csv
+**/gsr*
+gsr*
