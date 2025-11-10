@@ -67,15 +67,19 @@ class MainWindow:
         """
         self.root = root
         self.root.title("File Processing Framework")
-        self.root.geometry("750x950")
+        self.root.geometry("750x750")
         self.root.resizable(True, True)
 
         # Variables
         self.input_files = []
         self.config_file = None
         self.parameter_file = None
-        self.output_dir = None
         self.current_config = None
+
+        # Set default output directory
+        self.default_output_dir = Path.cwd() / "output"
+        self.default_output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir = str(self.default_output_dir)
 
         # Initialize task registry (auto-discovers tasks)
         self.registry = TaskRegistry()
@@ -148,27 +152,8 @@ class MainWindow:
         self.task_info_text.config(state='disabled')
         row += 1
 
-        # === STEP 2: CONFIGURATION ===
-        step2_label = ttk.Label(main_frame, text="STEP 2: CONFIGURATION", font=('Arial', 10, 'bold'))
-        step2_label.grid(row=row, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
-        row += 1
-
-        ttk.Separator(main_frame, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
-        row += 1
-
-        # Config File
-        ttk.Label(main_frame, text="Config File:").grid(row=row, column=0, sticky=tk.W, pady=5)
-        self.config_entry = ttk.Entry(main_frame, width=50, state='readonly')
-        self.config_entry.grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=5)
-        row += 1
-
-        ttk.Label(main_frame, text="(auto-linked to task)", font=('Arial', 8, 'italic')).grid(
-            row=row, column=1, sticky=tk.W, padx=5
-        )
-        row += 1
-
-        # === STEP 3: INPUT FILES ===
-        step3_label = ttk.Label(main_frame, text="STEP 3: INPUT FILES", font=('Arial', 10, 'bold'))
+        # === STEP 2: INPUT FILES ===
+        step3_label = ttk.Label(main_frame, text="STEP 2: INPUT FILES", font=('Arial', 10, 'bold'))
         step3_label.grid(row=row, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
         row += 1
 
@@ -176,10 +161,30 @@ class MainWindow:
         row += 1
 
         # Input Files
-        ttk.Label(main_frame, text="Input File(s):").grid(row=row, column=0, sticky=tk.W, pady=5)
-        self.input_entry = ttk.Entry(main_frame, width=50)
-        self.input_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=5)
-        ttk.Button(main_frame, text="Browse", command=self._browse_input).grid(row=row, column=2, pady=5)
+        ttk.Label(main_frame, text="Input File(s):").grid(row=row, column=0, sticky=(tk.W, tk.N), pady=5)
+
+        # Create frame for listbox and scrollbar
+        listbox_frame = ttk.Frame(main_frame)
+        listbox_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=5)
+
+        # Listbox with scrollbar
+        listbox_scrollbar = ttk.Scrollbar(listbox_frame, orient=tk.VERTICAL)
+        self.input_listbox = tk.Listbox(
+            listbox_frame,
+            height=5,
+            width=50,
+            yscrollcommand=listbox_scrollbar.set,
+            selectmode=tk.EXTENDED
+        )
+        listbox_scrollbar.config(command=self.input_listbox.yview)
+        self.input_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        listbox_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Button frame for Add/Remove
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=row, column=2, pady=5)
+        ttk.Button(button_frame, text="Add", command=self._browse_input, width=8).pack(pady=2)
+        ttk.Button(button_frame, text="Remove", command=self._remove_input, width=8).pack(pady=2)
         row += 1
 
         ttk.Label(main_frame, text="(select one or multiple files)", font=('Arial', 8, 'italic')).grid(
@@ -199,8 +204,8 @@ class MainWindow:
         )
         row += 1
 
-        # === STEP 4: OUTPUT ===
-        step4_label = ttk.Label(main_frame, text="STEP 4: OUTPUT", font=('Arial', 10, 'bold'))
+        # === STEP 3: OUTPUT ===
+        step4_label = ttk.Label(main_frame, text="STEP 3: OUTPUT", font=('Arial', 10, 'bold'))
         step4_label.grid(row=row, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
         row += 1
 
@@ -253,7 +258,7 @@ class MainWindow:
         self.log_text = scrolledtext.ScrolledText(
             main_frame,
             width=85,
-            height=25,
+            height=12,
             wrap=tk.WORD,
             font=('Courier', 9)
         )
@@ -264,6 +269,9 @@ class MainWindow:
         # Configure style for accent button
         style = ttk.Style()
         style.configure('Accent.TButton', font=('Arial', 11, 'bold'))
+
+        # Set default output directory in entry
+        self.output_entry.insert(0, str(self.default_output_dir))
 
         # Update task info and load config on startup
         self._on_task_selected()
@@ -285,10 +293,6 @@ class MainWindow:
             config_path = Path(self.task_configs[task_name])
             if config_path.exists():
                 self.config_file = str(config_path)
-                self.config_entry.config(state='normal')
-                self.config_entry.delete(0, tk.END)
-                self.config_entry.insert(0, config_path.name)
-                self.config_entry.config(state='readonly')
                 self._log(f"Auto-loaded config for {task_name}: {config_path.name}")
             else:
                 self._log(f"Warning: Config file not found: {config_path}")
@@ -338,13 +342,26 @@ class MainWindow:
         )
 
         if filenames:
-            self.input_files = list(filenames)
-            display_text = ', '.join([Path(f).name for f in filenames])
-            if len(display_text) > 60:
-                display_text = f"{len(filenames)} files selected"
-            self.input_entry.delete(0, tk.END)
-            self.input_entry.insert(0, display_text)
-            self._log(f"Selected {len(filenames)} input file(s)")
+            # Add new files to the list (avoid duplicates)
+            for filename in filenames:
+                if filename not in self.input_files:
+                    self.input_files.append(filename)
+                    self.input_listbox.insert(tk.END, Path(filename).name)
+            self._log(f"Added {len(filenames)} input file(s)")
+
+    def _remove_input(self):
+        """Remove selected files from input list."""
+        selected_indices = self.input_listbox.curselection()
+        if not selected_indices:
+            messagebox.showinfo("Info", "Please select file(s) to remove")
+            return
+
+        # Remove in reverse order to maintain indices
+        for index in reversed(selected_indices):
+            self.input_listbox.delete(index)
+            del self.input_files[index]
+
+        self._log(f"Removed {len(selected_indices)} file(s)")
 
     def _browse_parameter(self):
         """Browse for parameter file."""
