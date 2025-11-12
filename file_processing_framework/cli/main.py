@@ -71,9 +71,10 @@ Examples:
     )
 
     parser.add_argument(
-        '--parameter-file',
+        '--parameter-files',
         '-p',
-        help='Parameter file for task (CSV, JSON, etc.)'
+        nargs='+',
+        help='Parameter file(s) for task (CSV, JSON, etc.) - order matters'
     )
 
     # CLI overrides for input formats
@@ -154,14 +155,6 @@ def build_cli_overrides(args: argparse.Namespace) -> dict:
         if args.has_header is not None:
             input_config['has_header'] = args.has_header
 
-    # Parameter file override (new structure: task.parameters)
-    if args.parameter_file:
-        if 'task' not in overrides:
-            overrides['task'] = {}
-        if 'parameters' not in overrides['task']:
-            overrides['task']['parameters'] = {}
-        overrides['task']['parameters']['parameter_file'] = args.parameter_file
-
     return overrides
 
 
@@ -234,11 +227,15 @@ def main():
             print(f"Config file: {config_file}")
         print()
 
+        # Handle parameter files
+        parameter_files = args.parameter_files if hasattr(args, 'parameter_files') and args.parameter_files else None
+
         output_files = runner.run(
             input_files=args.input,
             task=task,
             output_dir=args.output_dir,
             config_file=config_file,
+            parameter_files=parameter_files,
             cli_overrides=cli_overrides if cli_overrides else None
         )
 

@@ -16,8 +16,22 @@ task:
       parse_values: true
 
   parameters:
+    # Task-specific settings
     add_processed_flag: true
     output_suffix: "processed"
+
+    # Parameter file format configurations
+    config:
+      csv:
+        has_header: true
+        separator: ","
+        decimal_separator: "."
+        encoding: utf-8
+        parse_values: true
+      json:
+        encoding: utf-8
+      xml:
+        encoding: utf-8
 
   output:
     format: json

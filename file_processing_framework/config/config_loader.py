@@ -212,7 +212,24 @@ class ConfigLoader:
                         'parse_values': True
                     }
                 },
-                'parameters': {},
+                'parameters': {
+                    'config': {
+                        'csv': {
+                            'has_header': True,
+                            'separator': ',',
+                            'decimal_separator': '.',
+                            'thousands_separator': ',',
+                            'encoding': 'utf-8',
+                            'parse_values': True
+                        },
+                        'json': {
+                            'encoding': 'utf-8'
+                        },
+                        'xml': {
+                            'encoding': 'utf-8'
+                        }
+                    }
+                },
                 'output': {
                     'format': 'json',
                     'config': {

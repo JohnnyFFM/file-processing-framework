@@ -5,7 +5,7 @@ All processing tasks must inherit from this class and implement the execute meth
 """
 
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import Tuple, List
 from .data_model import DataModel
 
 
@@ -34,6 +34,7 @@ class Task(ABC):
     def execute(
         self,
         data_model: DataModel,
+        parameter_models: List[DataModel],
         params: dict,
         input_filename: str
     ) -> Tuple[DataModel, str]:
@@ -42,7 +43,11 @@ class Task(ABC):
 
         Args:
             data_model: Input data to process
-            params: Task parameters from configuration or defaults
+            parameter_models: List of parameter files as DataModel objects (ordered).
+                            Access by index: parameter_models[0], parameter_models[1], etc.
+                            Empty list if no parameter files provided.
+            params: Task configuration settings (NOT file paths, only settings like
+                   column names, flags, etc.)
             input_filename: Original input filename (e.g., "sales_data.csv")
                           Use this to generate meaningful output names
 
@@ -56,10 +61,18 @@ class Task(ABC):
             TaskError: If task execution fails
 
         Example:
-            >>> def execute(self, data_model, params, input_filename):
+            >>> def execute(self, data_model, parameter_models, params, input_filename):
             ...     # Extract filename without extension
             ...     from pathlib import Path
             ...     file_stem = Path(input_filename).stem
+            ...
+            ...     # Access first parameter file if provided
+            ...     if parameter_models:
+            ...         param_data = parameter_models[0]
+            ...         # Process with parameter data
+            ...         for row in param_data.get_rows():
+            ...             # Use parameter data
+            ...             pass
             ...
             ...     # Process data (example: add a field)
             ...     if isinstance(data_model.data, list):

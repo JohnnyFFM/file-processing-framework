@@ -77,6 +77,7 @@ class TaskRunner:
         task: Task,
         output_dir: str,
         config_file: Optional[str] = None,
+        parameter_files: Optional[List[str]] = None,
         cli_overrides: Optional[Dict[str, Any]] = None
     ) -> List[str]:
         """
@@ -87,6 +88,7 @@ class TaskRunner:
             task: Task instance to execute
             output_dir: Output directory path
             config_file: Optional configuration file path
+            parameter_files: Optional list of parameter file paths (ordered, can be different formats)
             cli_overrides: Optional CLI parameter overrides
 
         Returns:
@@ -102,6 +104,11 @@ class TaskRunner:
 
         # Validate configuration
         self.config_loader.validate_config(config)
+
+        # Load parameter files
+        parameter_models = self._load_parameter_files(parameter_files or [], config)
+        if parameter_models:
+            logger.info(f"Loaded {len(parameter_models)} parameter file(s)")
 
         # Get output format from config
         output_format = config['task']['output']['format']
@@ -129,6 +136,7 @@ class TaskRunner:
                 processed_data, output_name = self._execute_task(
                     task,
                     data_model,
+                    parameter_models,
                     config,
                     input_file
                 )
@@ -261,6 +269,7 @@ class TaskRunner:
         self,
         task: Task,
         data_model: DataModel,
+        parameter_models: List[DataModel],
         config: Dict[str, Any],
         input_filename: str
     ) -> tuple[DataModel, str]:
@@ -270,6 +279,7 @@ class TaskRunner:
         Args:
             task: Task instance
             data_model: Input data
+            parameter_models: List of parameter DataModels
             config: Configuration dict
             input_filename: Original input filename
 
@@ -279,13 +289,14 @@ class TaskRunner:
         Raises:
             TaskError: If task execution fails
         """
-        # Get task parameters from config
+        # Get task parameters from config (settings only, not file paths)
         task_params = config.get('task', {}).get('parameters', {})
 
         # Execute task
         try:
             processed_data, output_name = task.execute(
                 data_model,
+                parameter_models,
                 task_params,
                 input_filename
             )
@@ -353,6 +364,86 @@ class TaskRunner:
             return output_filepath
         except Exception as e:
             raise FileWriteError(f"Failed to write output file: {e}")
+
+    def _load_parameter_files(
+        self,
+        parameter_files: List[str],
+        config: Dict[str, Any]
+    ) -> List[DataModel]:
+        """
+        Load parameter files and convert to DataModels.
+
+        Args:
+            parameter_files: List of parameter file paths (ordered)
+            config: Configuration dict
+
+        Returns:
+            List of DataModels (in same order as parameter_files)
+
+        Raises:
+            FileLoadError: If parameter file cannot be loaded
+            UnsupportedFormatError: If parameter file format is not supported
+        """
+        if not parameter_files:
+            return []
+
+        parameter_models = []
+
+        for i, filepath in enumerate(parameter_files, 1):
+            logger.info(f"Loading parameter file {i}/{len(parameter_files)}: {filepath}")
+
+            # Detect file format from extension
+            extension = Path(filepath).suffix.lower()
+
+            if extension not in self.LOADERS:
+                raise UnsupportedFormatError(
+                    f"Unsupported parameter file format: {extension}. "
+                    f"Supported formats: {', '.join(self.LOADERS.keys())}"
+                )
+
+            # Get loader class and instantiate
+            loader_class = self.LOADERS[extension]
+            loader = loader_class()
+
+            # Extract parameter configuration for this format
+            param_config = self._get_parameter_config(extension, config)
+
+            # Load file
+            try:
+                data_model = loader.load(filepath, param_config)
+                parameter_models.append(data_model)
+                logger.info(f"Loaded parameter file {i}: {data_model.metadata.get('row_count', 'N/A')} records")
+            except Exception as e:
+                raise FileLoadError(f"Failed to load parameter file {filepath}: {e}")
+
+        return parameter_models
+
+    def _get_parameter_config(self, extension: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract parameter configuration for specific file format.
+
+        Args:
+            extension: File extension (e.g., '.csv')
+            config: Full configuration dict
+
+        Returns:
+            dict: Parameter configuration for the format
+        """
+        # Map extension to format name
+        extension_to_format = {
+            '.csv': 'csv',
+            '.tsv': 'csv',
+            '.txt': 'csv',
+            '.json': 'json',
+            '.xml': 'xml'
+        }
+
+        format_name = extension_to_format.get(extension, 'csv')
+
+        # Get parameter config from task.parameters.config.<format>
+        param_config = config.get('task', {}).get('parameters', {}).get('config', {}).get(format_name, {}).copy()
+
+        return param_config
 
     def _get_input_config(self, extension: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """

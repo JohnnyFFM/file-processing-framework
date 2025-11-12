@@ -6,6 +6,7 @@ It passes data through with minimal modification.
 """
 
 from pathlib import Path
+from typing import List
 from ...core.task import Task
 from ...core.data_model import DataModel
 
@@ -26,6 +27,7 @@ class DemoTask(Task):
     def execute(
         self,
         data_model: DataModel,
+        parameter_models: List[DataModel],
         params: dict,
         input_filename: str
     ) -> tuple[DataModel, str]:
@@ -34,7 +36,8 @@ class DemoTask(Task):
 
         Args:
             data_model: Input data
-            params: Task parameters (can include custom settings)
+            parameter_models: List of parameter files as DataModel (not used in demo)
+            params: Task configuration settings
             input_filename: Original input filename
 
         Returns:

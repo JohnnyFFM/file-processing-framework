@@ -73,7 +73,7 @@ class MainWindow:
         # Variables
         self.input_files = []
         self.config_file = None
-        self.parameter_file = None
+        self.parameter_files = []  # Changed to list for multiple files
         self.current_config = None
 
         # Set default output directory
@@ -192,14 +192,37 @@ class MainWindow:
         )
         row += 1
 
-        # Parameter File
-        ttk.Label(main_frame, text="Parameter File:").grid(row=row, column=0, sticky=tk.W, pady=5)
-        self.parameter_entry = ttk.Entry(main_frame, width=50)
-        self.parameter_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=5)
-        ttk.Button(main_frame, text="Browse", command=self._browse_parameter).grid(row=row, column=2, pady=5)
+        # Parameter Files
+        ttk.Label(main_frame, text="Parameter File(s):").grid(row=row, column=0, sticky=(tk.W, tk.N), pady=5)
+
+        # Create frame for listbox and scrollbar
+        param_listbox_frame = ttk.Frame(main_frame)
+        param_listbox_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=5)
+
+        # Listbox with scrollbar
+        param_scrollbar = ttk.Scrollbar(param_listbox_frame, orient=tk.VERTICAL)
+        self.parameter_listbox = tk.Listbox(
+            param_listbox_frame,
+            height=5,
+            width=50,
+            yscrollcommand=param_scrollbar.set,
+            selectmode=tk.EXTENDED
+        )
+        param_scrollbar.config(command=self.parameter_listbox.yview)
+        self.parameter_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        param_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Button frame for Add/Remove/Up/Down
+        param_button_frame = ttk.Frame(main_frame)
+        param_button_frame.grid(row=row, column=2, pady=5)
+        ttk.Button(param_button_frame, text="Add", command=self._browse_parameter, width=8).pack(pady=2)
+        ttk.Button(param_button_frame, text="Remove", command=self._remove_parameter, width=8).pack(pady=2)
+        ttk.Separator(param_button_frame, orient='horizontal').pack(fill=tk.X, pady=5)
+        ttk.Button(param_button_frame, text="↑ Up", command=self._move_parameter_up, width=8).pack(pady=2)
+        ttk.Button(param_button_frame, text="↓ Down", command=self._move_parameter_down, width=8).pack(pady=2)
         row += 1
 
-        ttk.Label(main_frame, text="(optional - single parameter file for task)", font=('Arial', 8, 'italic')).grid(
+        ttk.Label(main_frame, text="(optional - order matters)", font=('Arial', 8, 'italic')).grid(
             row=row, column=1, sticky=tk.W, padx=5
         )
         row += 1
@@ -258,7 +281,7 @@ class MainWindow:
         self.log_text = scrolledtext.ScrolledText(
             main_frame,
             width=85,
-            height=12,
+            height=18,
             wrap=tk.WORD,
             font=('Courier', 9)
         )
@@ -364,27 +387,107 @@ class MainWindow:
         self._log(f"Removed {len(selected_indices)} file(s)")
 
     def _browse_parameter(self):
-        """Browse for parameter file."""
+        """Browse for parameter files."""
         filetypes = [
-            ('All Supported', '*.csv *.json *.xml *.txt *.yaml *.yml'),
+            ('All Supported', '*.csv *.json *.xml'),
             ('CSV files', '*.csv'),
             ('JSON files', '*.json'),
             ('XML files', '*.xml'),
-            ('Text files', '*.txt'),
-            ('YAML files', '*.yaml *.yml'),
             ('All files', '*.*')
         ]
 
-        filename = filedialog.askopenfilename(
-            title="Select Parameter File",
+        filenames = filedialog.askopenfilenames(
+            title="Select Parameter File(s)",
             filetypes=filetypes
         )
 
-        if filename:
-            self.parameter_file = filename
-            self.parameter_entry.delete(0, tk.END)
-            self.parameter_entry.insert(0, Path(filename).name)
-            self._log(f"Selected parameter file: {Path(filename).name}")
+        if filenames:
+            # Add new files to the list (avoid duplicates)
+            for filename in filenames:
+                if filename not in self.parameter_files:
+                    self.parameter_files.append(filename)
+                    # Display with order number
+                    order_num = len(self.parameter_files)
+                    display_name = f"{order_num}. {Path(filename).name}"
+                    self.parameter_listbox.insert(tk.END, display_name)
+            self._log(f"Added {len(filenames)} parameter file(s)")
+
+    def _remove_parameter(self):
+        """Remove selected files from parameter list."""
+        selected_indices = self.parameter_listbox.curselection()
+        if not selected_indices:
+            messagebox.showinfo("Info", "Please select parameter file(s) to remove")
+            return
+
+        # Remove in reverse order to maintain indices
+        for index in reversed(selected_indices):
+            del self.parameter_files[index]
+
+        # Rebuild listbox to update order numbers
+        self._rebuild_parameter_listbox()
+
+        self._log(f"Removed {len(selected_indices)} parameter file(s)")
+
+    def _move_parameter_up(self):
+        """Move selected parameter file up in order."""
+        selected_indices = self.parameter_listbox.curselection()
+        if not selected_indices:
+            messagebox.showinfo("Info", "Please select a parameter file to move")
+            return
+
+        if len(selected_indices) > 1:
+            messagebox.showinfo("Info", "Please select only one file to move")
+            return
+
+        index = selected_indices[0]
+        if index == 0:
+            # Already at top
+            return
+
+        # Swap with previous item
+        self.parameter_files[index], self.parameter_files[index - 1] = \
+            self.parameter_files[index - 1], self.parameter_files[index]
+
+        # Rebuild listbox
+        self._rebuild_parameter_listbox()
+
+        # Re-select the moved item
+        self.parameter_listbox.selection_set(index - 1)
+        self.parameter_listbox.see(index - 1)
+
+    def _move_parameter_down(self):
+        """Move selected parameter file down in order."""
+        selected_indices = self.parameter_listbox.curselection()
+        if not selected_indices:
+            messagebox.showinfo("Info", "Please select a parameter file to move")
+            return
+
+        if len(selected_indices) > 1:
+            messagebox.showinfo("Info", "Please select only one file to move")
+            return
+
+        index = selected_indices[0]
+        if index == len(self.parameter_files) - 1:
+            # Already at bottom
+            return
+
+        # Swap with next item
+        self.parameter_files[index], self.parameter_files[index + 1] = \
+            self.parameter_files[index + 1], self.parameter_files[index]
+
+        # Rebuild listbox
+        self._rebuild_parameter_listbox()
+
+        # Re-select the moved item
+        self.parameter_listbox.selection_set(index + 1)
+        self.parameter_listbox.see(index + 1)
+
+    def _rebuild_parameter_listbox(self):
+        """Rebuild parameter listbox with current order."""
+        self.parameter_listbox.delete(0, tk.END)
+        for i, filepath in enumerate(self.parameter_files, 1):
+            display_name = f"{i}. {Path(filepath).name}"
+            self.parameter_listbox.insert(tk.END, display_name)
 
     def _browse_output(self):
         """Browse for output directory."""
@@ -443,21 +546,12 @@ class MainWindow:
                 self._log(f"Config: {Path(self.config_file).name}")
             else:
                 self._log("Config: Using defaults")
-            if self.parameter_file:
-                self._log(f"Parameter file: {Path(self.parameter_file).name}")
+            if self.parameter_files:
+                self._log(f"Parameter files: {len(self.parameter_files)}")
+                for i, f in enumerate(self.parameter_files, 1):
+                    self._log(f"  {i}. {Path(f).name}")
             self._log(f"Output directory: {self.output_dir}")
             self._log("")
-
-            # Build overrides for parameter file
-            cli_overrides = None
-            if self.parameter_file:
-                cli_overrides = {
-                    'task': {
-                        'parameters': {
-                            'parameter_file': self.parameter_file
-                        }
-                    }
-                }
 
             # Run processing
             output_files = runner.run(
@@ -465,7 +559,7 @@ class MainWindow:
                 task=task,
                 output_dir=self.output_dir,
                 config_file=self.config_file if self.config_file else None,
-                cli_overrides=cli_overrides
+                parameter_files=self.parameter_files if self.parameter_files else None
             )
 
             # Success
